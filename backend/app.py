@@ -290,20 +290,52 @@ def rate_user(current_user, user_id):
 @app.route('/api/deals', methods=['POST'])
 @token_required
 def create_deal(current_user):
-    data = request.json
-    deal = Deal(
-        title=data['title'],
-        description=data['description'],
-        asset_type=data['asset_type'],
-        total_price=data['total_price'],
-        min_investment=data['min_investment'],
-        location=data.get('location', ''),
-        expected_roi=data.get('expected_roi', ''),
-        sponsor_id=current_user.id
-    )
-    db.session.add(deal)
-    db.session.commit()
-    return jsonify({'message': 'Deal created', 'deal_id': deal.id}), 201
+    try:
+        data = request.json
+        print(f"Creating deal with data: {data}")  # Debug log
+        
+        # Validate required fields
+        required_fields = ['title', 'description', 'asset_type', 'total_price', 'min_investment']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        deal = Deal(
+            title=data['title'],
+            description=data['description'],
+            asset_type=data['asset_type'],
+            total_price=float(data['total_price']),
+            min_investment=float(data['min_investment']),
+            location=data.get('location', ''),
+            expected_roi=data.get('expected_roi', ''),
+            sponsor_id=current_user.id
+        )
+        
+        db.session.add(deal)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Deal created successfully',
+            'deal_id': deal.id,
+            'deal': {
+                'id': deal.id,
+                'title': deal.title,
+                'description': deal.description,
+                'asset_type': deal.asset_type,
+                'total_price': deal.total_price,
+                'min_investment': deal.min_investment,
+                'location': deal.location,
+                'expected_roi': deal.expected_roi,
+                'sponsor_id': deal.sponsor_id,
+                'status': deal.status
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating deal: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'message': 'Failed to create deal'}), 500
 
 # --- Investment Tracking Routes ---
 
@@ -698,6 +730,27 @@ def get_document_status(current_user, doc_id):
         })
     except:
         return jsonify({'message': 'Document status not available'}), 501
+
+@app.route('/api/debug/db', methods=['GET'])
+@token_required
+def debug_db(current_user):
+    try:
+        # Check if deals table exists
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+        
+        # Count deals
+        deal_count = Deal.query.count()
+        
+        return jsonify({
+            'tables': tables,
+            'deal_count': deal_count,
+            'user_id': current_user.id,
+            'username': current_user.username
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # --- WebSocket for Real-Time Chat ---
 @socketio.on('join_deal_chat')
