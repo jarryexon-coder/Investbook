@@ -27,6 +27,41 @@ bcrypt = Bcrypt(app)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found', 'message': 'The requested URL was not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return jsonify({'error': 'Internal server error', 'message': str(error)}), 500
+
+# Add this before your routes
+@app.route('/')
+def home():
+    return jsonify({
+        'name': 'InvestBook API',
+        'version': '1.0.0',
+        'status': 'running',
+        'endpoints': {
+            'register': '/api/register [POST]',
+            'login': '/api/login [POST]',
+            'deals': '/api/deals [GET]',
+            'create_deal': '/api/deals [POST]',
+            'groups': '/api/groups [POST]',
+            'group_status': '/api/groups/<id>/status [GET]'
+        }
+    })
+
+@app.route('/health')
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.datetime.utcnow().isoformat(),
+        'database': 'connected' if db.session.is_active else 'disconnected'
+    })
+
 # --- Database Models ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -134,15 +169,60 @@ def token_required(f):
     return decorated
 
 # --- Routes ---
+@app.route('/')
+def index():
+    return jsonify({
+        'message': 'InvestBook API is running!',
+        'version': '1.0.0',
+        'endpoints': {
+            'register': '/api/register',
+            'login': '/api/login',
+            'deals': '/api/deals',
+            'groups': '/api/groups'
+        }
+    })
+
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.datetime.utcnow().isoformat()
+    })
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    data = request.json
-    hashed = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user = User(username=data['username'], email=data['email'], password_hash=hashed)
-    db.session.add(user)
-    db.session.commit()
-    return jsonify({'message': 'User created'}), 201
+    try:
+        data = request.json
+        
+        # Validate input
+        if not data or not data.get('username') or not data.get('email') or not data.get('password'):
+            return jsonify({'message': 'Missing required fields'}), 400
+        
+        # Check if user exists
+        if User.query.filter_by(username=data['username']).first():
+            return jsonify({'message': 'Username already exists'}), 400
+        
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({'message': 'Email already exists'}), 400
+        
+        # Create user
+        hashed = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+        user = User(username=data['username'], email=data['email'], password_hash=hashed)
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'User created successfully',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Registration error: {str(e)}")
+        return jsonify({'message': f'Registration failed: {str(e)}'}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
