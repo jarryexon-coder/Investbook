@@ -12,6 +12,10 @@ import datetime
 from functools import wraps
 import os
 from dotenv import load_dotenv
+# Add these imports
+from trust_algorithm import TrustScoringEngine
+from document_signing import DocumentSigning
+from admin_dashboard import admin_bp
 import json
 import hashlib
 
@@ -766,6 +770,9 @@ def handle_deal_chat_message(data):
         'message': data['message'],
         'timestamp': datetime.datetime.utcnow().isoformat()
     }, room=f"deal_{data['deal_id']}")
+
+# Register admin blueprint
+app.register_blueprint(admin_bp)
 
 # --- Run ---
 if __name__ == '__main__':
